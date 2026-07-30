@@ -1,7 +1,8 @@
 import os
 from dotenv import load_dotenv
 from supabase import create_client, Client
-from fastapi import FastAPI, HTTPException, status, Header
+from fastapi import FastAPI, HTTPException, status, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 # stage 0
 load_dotenv()
@@ -20,6 +21,7 @@ class AuthRequest(BaseModel):
 
 
 app = FastAPI(title="Auth API")
+security = HTTPBearer(auto_error=False)
 
 
 @app.on_event("startup")
@@ -69,11 +71,19 @@ async def login(request: AuthRequest):
 async def public_info():
     return {"message": "This is a public endpoint accessible without authentication."}
 
+# stage 3
+
 
 @app.get("/protected/profile")
-async def protected_profile(authorization: str = Header(None)):
-    if authorization is None or not authorization.startswith("Bearer"):
+async def protected_profile(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Access token required")
+
+    token = credentials.credentials
+
+    try:
+        user_response = supabase.auth.get_user(token)
+        return user_response.user
+    except Exception as e:
         raise HTTPException(
-            status_code=401, detail="Access token required")
-    token = authorization.split(" ")[1]
-    return {"message": "token recieved", "token_preview": token[:20]}
+            status_code=401, detail="Invalid or expired access token")
