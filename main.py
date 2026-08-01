@@ -24,6 +24,22 @@ app = FastAPI(title="Auth API")
 security = HTTPBearer(auto_error=False)
 
 
+# stage 4
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Access token required")
+
+    token = credentials.credentials
+
+    try:
+        user_response = supabase.auth.get_user(token)
+        return user_response.user
+    except Exception:
+        raise HTTPException(
+            status_code=401, detail="Invalid or expired access token")
+
+
 @app.on_event("startup")
 async def startup_event():
     print("Server running and connected to supabase")
@@ -75,15 +91,20 @@ async def public_info():
 
 
 @app.get("/protected/profile")
-async def protected_profile(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    if credentials is None:
-        raise HTTPException(status_code=401, detail="Access token required")
+async def protected_profile(user=Depends(get_current_user)):
+    return user
 
-    token = credentials.credentials
 
+# for reuseability
+@app.get("/protected/dashboard")
+async def protected_dashboard(user=Depends(get_current_user)):
+    return {"message": f"Welcome to your dashboard, {user.email}!"}
+
+
+@app.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(user=Depends(get_current_user)):
     try:
-        user_response = supabase.auth.get_user(token)
-        return user_response.user
+        supabase.auth.sign_out()
+        return {"message": "Successfully logged out"}
     except Exception as e:
-        raise HTTPException(
-            status_code=401, detail="Invalid or expired access token")
+        raise HTTPException(status_code=400, detail="Logout failed")
